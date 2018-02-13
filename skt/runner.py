@@ -14,6 +14,7 @@
 import logging
 import os
 import re
+import platform
 import subprocess
 import time
 import xml.etree.ElementTree as etree
@@ -29,8 +30,9 @@ class beakerrunner(runner):
         self.jobowner = jobowner
         self.watchdelay = 60
         self.watchlist = set()
-        self.whiteboard = None
+        self.whiteboard = {}
         self.failures = {}
+        self.h2a = {}
         self.recipes = set()
         self.jobs = set()
         self.lastsubmitted = None
@@ -146,6 +148,9 @@ class beakerrunner(runner):
 
         return max(set(fhosts), key=fhosts.count)
 
+    def hostarch(self, host):
+        return self.h2a.get(host, platform.machine())
+
     def jobresult(self, jobid):
         ret = 0
         result = None
@@ -206,8 +211,11 @@ class beakerrunner(runner):
         newrs = etree.Element("recipeSet")
         newrs.append(tmp)
 
+        jid = "J:%s" % tmp.attrib.get("job_id")
+        whiteboard = self.whiteboard.get(jid, "")
+
         newwb = etree.Element("whiteboard")
-        newwb.text = "%s [R:%s]" % (self.whiteboard, tmp.attrib.get("id"))
+        newwb.text = "%s [R:%s]" % (whiteboard, tmp.attrib.get("id"))
 
         if (samehost):
             newwb.text += " (%s)" % tmp.attrib.get("system")
@@ -253,6 +261,7 @@ class beakerrunner(runner):
                                 self.failures[origin] = [[], set(), 1]
 
                             self.failures[origin][0].append(root.attrib.get("system"))
+                            self.h2a[root.attrib.get("system")] = root.attrib.get("arch")
                             self.failures[origin][1].add(root.attrib.get("result"))
 
                             if reschedule:
@@ -272,8 +281,8 @@ class beakerrunner(runner):
     def add_to_watchlist(self, jobid, reschedule = True, origin = None):
         root = self.getresultstree(jobid)
 
-        if self.whiteboard == None:
-            self.whiteboard = root.find("whiteboard").text
+        if not self.whiteboard.has_key(jobid):
+            self.whiteboard[jobid] = root.find("whiteboard").text
 
         self.j2r[jobid] = set()
         for el in root.findall("recipeSet/recipe"):
@@ -328,13 +337,8 @@ class beakerrunner(runner):
 
         return jobid
 
-    def run(self, url, release, wait = False, host = None, uid = "",
-            reschedule = True):
-        ret = 0
-        self.failures = {}
-        self.recipes = set()
-        self.watchlist = set()
-
+    def prepare_and_submit(self, url, release, host = None, uid = "",
+                           arch = platform.machine()):
         uid += " %s" % url.split('/')[-1]
 
         if host == None:
@@ -348,7 +352,19 @@ class beakerrunner(runner):
                                             'KPKG_URL' : url,
                                             'UID': uid,
                                             'HOSTNAME' : hostname,
-                                            'HOSTNAMETAG' : hostnametag}))
+                                            'HOSTNAMETAG' : hostnametag,
+                                            'ARCH' : arch}))
+        return jobid
+
+    def run(self, url, release, wait = False, host = None, uid = "",
+            arch = platform.machine(), reschedule = True):
+        ret = 0
+
+        self.failures = {}
+        self.recipes = set()
+        self.watchlist = set()
+
+        jobid = self.prepare_and_submit(url, release, host, uid, arch)
 
         if wait == True:
             self.wait(jobid, reschedule)

@@ -18,6 +18,7 @@ from email.mime.text import MIMEText
 import gzip
 import logging
 import os
+import platform
 import re
 import requests
 import smtplib
@@ -150,6 +151,7 @@ class reporter(object):
         self.cfg = cfg
         self.attach = list()
         self.mergedata = None
+        self.guiltyarch = platform.machine()
 
     def infourldata(self, mergedata):
         r = requests.get(self.cfg.get("infourl"))
@@ -198,6 +200,13 @@ class reporter(object):
                 'config' : None,
                 }
 
+        if self.cfg.has_key('mfarch'):
+            self.guiltyarch = self.cfg.get('mfarch')
+	if 'buildlog' in set().union(*self.cfg.get("archdata").values()):
+            for (arch, archdata) in self.cfg.get("archdata").iteritems():
+		if 'buildlog' in archdata.keys():
+                    self.guiltyarch = arch
+
         if self.cfg.get("infourl"):
             mergedata = self.infourldata(mergedata)
         else:
@@ -205,6 +214,11 @@ class reporter(object):
 
         if self.cfg.get("cfgurl"):
             r = requests.get(self.cfg.get("cfgurl"))
+            if r != None:
+                mergedata['config'] = r.text
+        elif self.cfg.has_key("archdata") and \
+             self.cfg["archdata"][self.guiltyarch].get("cfgurl"):
+            r = requests.get(self.cfg["archdata"][self.guiltyarch].get("cfgurl"))
             if r != None:
                 mergedata['config'] = r.text
         else:
@@ -265,14 +279,14 @@ class reporter(object):
             result.append(fp.read())
         return result
 
-    def getbuildfailure(self):
+    def getbuildfailure(self, logpath):
         result = []
 
         attname = "build.log"
         result.append("\n-----------------------")
         result.append("Build failed: see attached %s" % attname)
 
-        with open(self.cfg.get("buildlog"), 'r') as fp:
+        with open(logpath, 'r') as fp:
             self.attach.append((attname, fp.read()))
 
         return result
@@ -337,7 +351,10 @@ class reporter(object):
         if self.cfg.get("mergelog"):
             msg += self.getmergefailure()
         elif self.cfg.get("buildlog"):
-            msg += self.getbuildfailure()
+            msg += self.getbuildfailure(self.cfg.get("buildlog"))
+        elif self.cfg.has_key("archdata") and \
+             self.cfg["archdata"][self.guiltyarch].get("buildlog"):
+            msg += self.getbuildfailure(self.cfg["archdata"][self.guiltyarch].get("buildlog"))
         else:
             msg += self.gettested()
             msg += self.getjobresults()
@@ -356,7 +373,9 @@ class reporter(object):
 
         if self.cfg.get("mergelog"):
             subject += "patch application failed"
-        elif self.cfg.get("buildlog"):
+        elif self.cfg.get("buildlog") or \
+                 (self.cfg.has_key("archdata") and \
+                  self.cfg["archdata"][self.guiltyarch].get("buildlog")):
             subject += "build failed"
         else:
             subject += "result report"

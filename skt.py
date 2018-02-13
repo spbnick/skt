@@ -21,6 +21,7 @@ import json
 import junit_xml
 import logging
 import os
+import platform
 import shutil
 import sys
 import time
@@ -135,64 +136,111 @@ def cmd_merge(cfg):
 def cmd_build(cfg):
     tstamp = datetime.datetime.strftime(datetime.datetime.now(), "%Y%m%d%H%M%S")
 
-    builder = skt.kbuilder(cfg.get('workdir'), cfg.get('baseconfig'),
-                           cfg.get('cfgtype'), cfg.get('makeopts'))
+    if 'arches' not in cfg or cfg.get('arches') == None:
+        cfg['arches'] = { platform.machine() :
+                          { 'config' : cfg.get('baseconfig'),
+                            'makeopts' : cfg.get('makeopts') } }
 
-    try:
-        tgz = builder.mktgz(cfg.get('wipe'))
-    except Exception as e:
-        save_state(cfg, {'buildlog' : builder.buildlog})
-        raise e
+    for (arch, opts) in cfg.get('arches').iteritems():
+        builder = skt.kbuilder(cfg.get('workdir'), opts.get('config'),
+                               cfg.get('cfgtype'), opts.get('makeopts'))
 
-    if cfg.get('buildhead') != None:
-        ttgz = "%s.tar.gz" % cfg.get('buildhead')
-    else:
-        ttgz = addtstamp(tgz, tstamp)
-    os.rename(tgz, ttgz)
-    logging.info("tarball path: %s", ttgz)
+        try:
+            tgz = builder.mktgz(cfg.get('wipe'))
+        except Exception as e:
+            save_state(cfg, {'buildlog_%s' % arch : builder.buildlog})
+            raise e
 
-    tbuildinfo = None
-    if cfg.get('buildinfo') != None:
         if cfg.get('buildhead') != None:
-            tbuildinfo = "%s.csv" % cfg.get('buildhead')
+            ttgz = "%s_%s.tar.gz" % (cfg.get('buildhead'), arch)
         else:
-            tbuildinfo = addtstamp(cfg.get('buildinfo'), tstamp)
-        os.rename(cfg.get('buildinfo'), tbuildinfo)
+            ttgz = arch + "_" + addtstamp(tgz, tstamp)
+        os.rename(tgz, ttgz)
+        logging.info("tarball path: %s", ttgz)
 
-    tconfig = "%s.config" % tbuildinfo
-    shutil.copyfile(builder.get_cfgpath(), tconfig)
+        tbuildinfo = None
+        if cfg.get('buildinfo') != None:
+            if cfg.get('buildhead') != None:
+                tbuildinfo = "%s.csv" % (cfg.get('buildhead'))
+            else:
+                tbuildinfo = addtstamp(cfg.get('buildinfo'), tstamp)
+            os.rename(cfg.get('buildinfo'), tbuildinfo)
+            cfg["buildinfo"] == None
 
-    krelease = builder.getrelease()
+        tconfig = tbuildinfo.replace('.csv', "_%s.config" % arch)
+        shutil.copyfile(builder.get_cfgpath(), tconfig)
 
-    save_state(cfg, {'tarpkg'    : ttgz,
-                     'buildinfo' : tbuildinfo,
-                     'buildconf' : tconfig,
-                     'krelease'  : krelease})
+        krelease = builder.getrelease()
+
+        if tbuildinfo:
+            save_state(cfg, {'buildinfo' : tbuildinfo})
+
+        save_state(cfg, {'tarpkg_%s' % arch    : ttgz,
+                         'buildconf_%s' % arch : tconfig,
+                         'krelease' : krelease})
 
 @junit
 def cmd_publish(cfg):
     publisher = skt.publisher.getpublisher(*cfg.get('publisher'))
 
     infourl = None
-    url = publisher.publish(cfg.get('tarpkg'))
-    logging.info("published url: %s", url)
+    if "archdata" not in cfg or cfg.get("archdata") == None:
+        cfg["archdata"] = {}
+
+    if cfg.get('tarpkg'):
+        if not cfg["archdata"].has_key(platform.machine()):
+            cfg["archdata"][platform.machine()] = {}
+        cfg["archdata"][platform.machine()]["tarkpg"] = cfg.get('tarpkg')
+
+    if cfg.get('buildconf'):
+        if not cfg["archdata"].has_key(platform.machine()):
+            cfg["archdata"][platform.machine()] = {}
+        cfg["archdata"][platform.machine()]["buildconf"] = cfg.get('buildconf')
+
+    for (arch, archdata) in cfg.get("archdata").iteritems():
+        url = publisher.publish(archdata.get('tarpkg'))
+        logging.info("published url: %s", url)
+
+        if archdata.get('buildconf') != None:
+            cfgurl = publisher.publish(archdata.get('buildconf'))
+
+        save_state(cfg, {'buildurl_%s' % arch : url,
+                         'cfgurl_%s' % arch   : cfgurl})
 
     if cfg.get('buildinfo') != None:
         infourl = publisher.publish(cfg.get('buildinfo'))
-
-    if cfg.get('buildconf') != None:
-        cfgurl = publisher.publish(cfg.get('buildconf'))
-
-    save_state(cfg, {'buildurl' : url,
-                     'cfgurl'   : cfgurl,
-                     'infourl'  : infourl})
+        save_state(cfg, {'infourl' : infourl})
 
 @junit
 def cmd_run(cfg):
     global retcode
+
+    if "archdata" not in cfg or cfg.get("archdata") == None:
+        cfg["archdata"] = {}
+
+    if cfg.get('buildurl'):
+        if not cfg["archdata"].has_key(platform.machine()):
+            cfg["archdata"][platform.machine()] = {}
+        cfg["archdata"][platform.machine()]["buildurl"] = cfg.get('buildurl')
+
+    if cfg.get('cfgurl'):
+        if not cfg["archdata"].has_key(platform.machine()):
+            cfg["archdata"][platform.machine()] = {}
+        cfg["archdata"][platform.machine()]["cfgurl"] = cfg.get('cfgurl')
+
     runner = skt.runner.getrunner(*cfg.get('runner'))
-    retcode = runner.run(cfg.get('buildurl'), cfg.get('krelease'),
-                         cfg.get('wait'), uid = cfg.get('uid'))
+
+    # TODO: might be worth switching to a single job with recipes for each arch
+    for (arch, archdata) in cfg.get("archdata").iteritems():
+        runner.prepare_and_submit(archdata.get('buildurl'),
+                                  cfg.get('krelease'),
+                                  uid = cfg.get('uid'),
+                                  arch = arch)
+
+        runner.add_to_watchlist(runner.lastsubmitted)
+
+    runner.watchloop()
+    retcode = runner.getresults()
 
     idx = 0
     for job in runner.jobs:
@@ -203,21 +251,27 @@ def cmd_run(cfg):
 
     cfg['jobs'] = runner.jobs
 
-    if retcode != 0 and cfg.get('basehead') and cfg.get('publisher') \
-            and cfg.get('basehead') != cfg.get('buildhead'):
-        # TODO: there is a chance that baseline 'krelease' is different
-        baserunner = skt.runner.getrunner(*cfg.get('runner'))
-        publisher = skt.publisher.getpublisher(*cfg.get('publisher'))
-        baseurl = publisher.geturl("%s.tar.gz" % cfg.get('basehead'))
-        basehost = runner.get_mfhost()
-        baseres = baserunner.run(baseurl, cfg.get('krelease'), cfg.get('wait'),
-                                 host = basehost, uid = "baseline check",
-                                 reschedule = False)
-        save_state(cfg, {'baseretcode' : baseres})
+    if retcode != 0:
+        mfhost = runner.get_mfhost()
+        mfarch = runner.hostarch(mfhost)
 
-        # If baseline also fails - assume pass
-        if baseres != 0:
-            retcode = 0
+        save_state(cfg, {'mfhost' : mfhost, 'mfarch' : mfarch})
+
+        if cfg.get('basehead') and cfg.get('publisher') \
+                and cfg.get('basehead') != cfg.get('buildhead'):
+            # TODO: there is a chance that baseline 'krelease' is different
+            baserunner = skt.runner.getrunner(*cfg.get('runner'))
+            publisher = skt.publisher.getpublisher(*cfg.get('publisher'))
+            baseurl = publisher.geturl("%s_%s.tar.gz" % (cfg.get('basehead'),
+                                       mfarch))
+            baseres = baserunner.run(baseurl, cfg.get('krelease'), cfg.get('wait'),
+                                     host = mfhost, uid = "baseline check",
+                                     reschedule = False)
+            save_state(cfg, {'baseretcode' : baseres})
+
+            # If baseline also fails - assume pass
+            if baseres != 0:
+                retcode = 0
 
     save_state(cfg, {'retcode' : retcode})
 
@@ -378,6 +432,14 @@ def load_config(args):
                     if "patchworks" not in cfg:
                         cfg["patchworks"] = list()
                     cfg["patchworks"].append(value)
+                elif name.startswith(("tarpkg_", "buildconf_", "buildurl_",
+                                      "cfgurl_", "buildlog_")):
+                    (otype, oarch) = name.split('_', 1)
+                    if "archdata" not in cfg:
+                        cfg["archdata"] = {}
+                    if oarch not in cfg.get("archdata"):
+                        cfg["archdata"][oarch] = {}
+                    cfg["archdata"][oarch][otype] = value
                 cfg[name] = value
 
     if config.has_section('config'):
@@ -414,6 +476,14 @@ def load_config(args):
         cfg['reporter'] = [cfg.get('reporter')[0],
                          ast.literal_eval(cfg.get('reporter')[1])]
 
+    if config.has_section('arches') and ('arches' not in cfg or
+                                            cfg.get('arches') == None):
+        cfg['arches'] = {}
+        for (key, val) in config.items('arches'):
+            (arch, ctype) = key.rsplit('_', 1)
+            if arch not in cfg['arches']:
+                cfg['arches'][arch] = {}
+            cfg['arches'][arch][ctype] = val
 
     if 'merge_ref' not in cfg or cfg.get('merge_ref') == None:
         cfg['merge_ref'] = []

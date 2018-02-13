@@ -361,7 +361,7 @@ class kbuilder(object):
         self.buildlog = "%s/build.log" % self.path
         self.defmakeargs = ["make", "-C", self.path]
 
-        if makeopts != None:
+        if makeopts != None and makeopts != "":
             # FIXME: Might want something a bit smarter here, something that
             # would parse it the same way bash does
             self.makeopts = makeopts.split(' ')
