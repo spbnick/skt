@@ -221,9 +221,6 @@ class reporter(object):
             r = requests.get(self.cfg["archdata"][self.guiltyarch].get("cfgurl"))
             if r != None:
                 mergedata['config'] = r.text
-        else:
-            with open("%s/.config" % self.cfg.get("workdir"), "r") as fp:
-                mergedata['config'] = fp.read()
 
         self.mergedata = mergedata
 
