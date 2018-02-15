@@ -143,7 +143,7 @@ def cmd_build(cfg):
 
     for (arch, opts) in cfg.get('arches').iteritems():
         builder = skt.kbuilder(cfg.get('workdir'), opts.get('config'),
-                               cfg.get('cfgtype'), opts.get('makeopts'))
+                               cfg.get('cfgtype'), opts.get('makeopts'), arch)
 
         try:
             tgz = builder.mktgz(cfg.get('wipe'))

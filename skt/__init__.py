@@ -13,6 +13,7 @@
 
 import logging
 import multiprocessing
+import platform
 import re
 import shutil
 import subprocess
@@ -352,14 +353,16 @@ class ktree(object):
         return (ret, binfo)
 
 class kbuilder(object):
-    def __init__(self, path, basecfg, cfgtype = None, makeopts = None):
+    def __init__(self, path, basecfg, cfgtype = None, makeopts = None,
+                 arch = platform.machine()):
         self.path = os.path.expanduser(path)
         self.basecfg = os.path.expanduser(basecfg)
         self.cfgtype = cfgtype if cfgtype != None else "olddefconfig"
         self._ready = 0
         self.makeopts = None
-        self.buildlog = "%s/build.log" % self.path
-        self.defmakeargs = ["make", "-C", self.path]
+        self.objdir = "%s/build_%s" % (self.path, arch)
+        self.buildlog = "%s/build.log" % self.objdir
+        self.defmakeargs = ["make", "-C", self.path, "O=%s" % self.objdir]
 
         if makeopts != None and makeopts != "":
             # FIXME: Might want something a bit smarter here, something that
@@ -376,12 +379,19 @@ class kbuilder(object):
         logging.info("cfgtype: %s", self.cfgtype)
 
     def prepare(self, clean=True):
+        if not os.path.isdir(self.objdir):
+            try:
+                os.unlink(self.objdir)
+            except:
+                pass
+            os.mkdir(self.objdir)
+
         if (clean):
             args = self.defmakeargs + ["mrproper"]
             logging.info("cleaning up tree: %s", args)
             subprocess.check_call(args)
 
-        shutil.copyfile(self.basecfg, "%s/.config" % self.path)
+        shutil.copyfile(self.basecfg, self.get_cfgpath())
 
         args = self.defmakeargs + [self.cfgtype]
         logging.info("prepare config: %s", args)
@@ -389,7 +399,7 @@ class kbuilder(object):
         self._ready = 1
 
     def get_cfgpath(self):
-        return "%s/.config" % self.path
+        return "%s/.config" % self.objdir
 
     def getrelease(self):
         krelease = None
@@ -433,7 +443,7 @@ class kbuilder(object):
 
         fpath = None
         if tgzpath != None:
-            fpath = "/".join([self.path, tgzpath])
+            fpath = "/".join([self.objdir, tgzpath])
 
         if fpath == None or not os.path.isfile(fpath):
             with open(self.buildlog, "w") as fp:
