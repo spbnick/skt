@@ -221,6 +221,10 @@ class reporter(object):
             r = requests.get(self.cfg["archdata"][self.guiltyarch].get("cfgurl"))
             if r != None:
                 mergedata['config'] = r.text
+        elif self.cfg.has_key("archdata") and \
+             self.cfg["archdata"][self.guiltyarch].get("kconf"):
+            with open(self.cfg["archdata"][self.guiltyarch].get("kconf"), 'r') as cfd:
+                mergedata['config'] = cfd.read()
 
         self.mergedata = mergedata
 

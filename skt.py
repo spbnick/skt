@@ -148,7 +148,8 @@ def cmd_build(cfg):
         try:
             tgz = builder.mktgz(cfg.get('wipe'))
         except Exception as e:
-            save_state(cfg, {'buildlog_%s' % arch : builder.buildlog})
+            save_state(cfg, {'buildlog_%s' % arch : builder.buildlog,
+                             'kconf_%s' % arch : builder.get_cfgpath()})
             raise e
 
         if cfg.get('buildhead') != None:
@@ -433,7 +434,7 @@ def load_config(args):
                         cfg["patchworks"] = list()
                     cfg["patchworks"].append(value)
                 elif name.startswith(("tarpkg_", "buildconf_", "buildurl_",
-                                      "cfgurl_", "buildlog_")):
+                                      "cfgurl_", "buildlog_", "kconf_")):
                     (otype, oarch) = name.split('_', 1)
                     if "archdata" not in cfg:
                         cfg["archdata"] = {}
