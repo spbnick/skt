@@ -241,7 +241,7 @@ class reporter(object):
             result += [ "\npatchwork url: %s" % purl,
                         "         name: %s" % pname ]
 
-        if not self.cfg.get("mergelog"):
+        if not self.cfg.get("mergelog") and self.mergedata.get("config"):
             cfgname = "config.gz"
             result.append("\nconfig: see attached '%s'" % cfgname)
             self.attach.append((cfgname, gzipdata(self.mergedata["config"])))
