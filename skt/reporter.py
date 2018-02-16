@@ -202,7 +202,7 @@ class reporter(object):
 
         if self.cfg.has_key('mfarch'):
             self.guiltyarch = self.cfg.get('mfarch')
-	if 'buildlog' in set().union(*self.cfg.get("archdata").values()):
+	if self.cfg.get("archdata") and 'buildlog' in set().union(*self.cfg.get("archdata").values()):
             for (arch, archdata) in self.cfg.get("archdata").iteritems():
 		if 'buildlog' in archdata.keys():
                     self.guiltyarch = arch
