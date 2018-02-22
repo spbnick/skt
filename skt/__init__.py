@@ -15,6 +15,7 @@ import logging
 import multiprocessing
 import platform
 import re
+import requests
 import shutil
 import subprocess
 import tempfile
@@ -356,13 +357,32 @@ class kbuilder(object):
     def __init__(self, path, basecfg, cfgtype = None, makeopts = None,
                  arch = platform.machine()):
         self.path = os.path.expanduser(path)
-        self.basecfg = os.path.expanduser(basecfg)
         self.cfgtype = cfgtype if cfgtype != None else "olddefconfig"
         self._ready = 0
         self.makeopts = None
         self.objdir = "%s/build_%s" % (self.path, arch)
         self.buildlog = "%s/build.log" % self.objdir
         self.defmakeargs = ["make", "-C", self.path, "O=%s" % self.objdir]
+
+        if not os.path.isdir(self.objdir):
+            try:
+                os.unlink(self.objdir)
+            except:
+                pass
+            os.mkdir(self.objdir)
+
+
+        if re.match('^[^:]+://', basecfg):
+            r = requests.get(basecfg)
+            if r != None:
+                cfgpath = "%s/.config.base" % (self.objdir)
+                with open(cfgpath, 'w') as cfd:
+                    cfd.write(r.text);
+                self.basecfg = cfgpath
+            else:
+                raise Exception("Failed to fetch config from %s" % self.basecfg)
+        else:
+            self.basecfg = os.path.expanduser(basecfg)
 
         if makeopts != None and makeopts != "":
             # FIXME: Might want something a bit smarter here, something that
@@ -379,13 +399,6 @@ class kbuilder(object):
         logging.info("cfgtype: %s", self.cfgtype)
 
     def prepare(self, clean=True):
-        if not os.path.isdir(self.objdir):
-            try:
-                os.unlink(self.objdir)
-            except:
-                pass
-            os.mkdir(self.objdir)
-
         if (clean):
             args = self.defmakeargs + ["mrproper"]
             logging.info("cleaning up tree: %s", args)
