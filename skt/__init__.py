@@ -170,6 +170,18 @@ class ktree(object):
         return self.wdir
 
     def dumpinfo(self, fname='buildinfo.csv'):
+        """
+        Write build information to the specified file in ad-hoc CSV format.
+        The order of the "columns" in the file depends on the order various
+        member functions were called in.
+
+        Args:
+            fname:  Name of the output file, relative to the workdir.
+                    Default is "buildinfo.csv".
+
+        Returns:
+            Full path to the written file.
+        """
         fpath = '/'.join([self.wdir, fname])
         with open(fpath, 'w') as f:
             for iitem in self.info:
@@ -185,7 +197,7 @@ class ktree(object):
             ref:    The reference to commit to get the committer date of,
                     or None, if the currently checked-out commit should be
                     used instead.
-        Return:
+        Returns:
             The epoch timestamp string of the commit's committer date.
         """
         args = ["git",
@@ -213,7 +225,7 @@ class ktree(object):
         Args:
             ref:    The reference to commit to get the hash of, or None, if
                     the currently checked-out commit should be used instead.
-        Return:
+        Returns:
             The commit's full hash string.
         """
         args = ["git",

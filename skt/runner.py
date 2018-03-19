@@ -27,6 +27,7 @@ class runner(object):
     # TODO Define abstract "run" method.
 
 class beakerrunner(runner):
+    """Beaker test runner"""
     TYPE = 'beaker'
 
     def __init__(self, jobtemplate, jobowner = None):
@@ -37,6 +38,9 @@ class beakerrunner(runner):
             jobtemplate:    Path to a Beaker job template. Can contain a tilde
                             expression ('~' or '~user') to be expanded into
                             the current user's home directory.
+            jobowner:       Name of a Beaker user on whose behalf the job
+                            should be submitted, or None, if the owner should
+                            be the current user.
         """
         # Beaker job template file path
         # FIXME Move expansion up the call stack, as this limits the class
