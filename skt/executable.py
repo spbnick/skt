@@ -218,6 +218,7 @@ def cmd_build(cfg):
     try:
         tgz = builder.mktgz()
     except Exception as e:
+        logging.error("Exception caught: %s", traceback.format_exc())
         save_state(cfg, {'buildlog': builder.buildlog})
         raise e
 
